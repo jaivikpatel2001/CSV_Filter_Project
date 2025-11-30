@@ -8,8 +8,10 @@ import {
     parseNumeric,
     normalizeDate,
     transformRow,
-    getOutputColumns
+    getOutputColumns,
+    preserveDepartmentID
 } from '../src/utils/transformer.js';
+
 
 describe('transformUPC', () => {
     test('removes one leading zero', () => {
@@ -263,6 +265,107 @@ describe('transformRow', () => {
         expect(transformedRow.Item).toBe('Chips');
         expect(transformedRow.UPC).toBe('12345');
         expect(transformedRow.Description).toBe('Potato chips');
+    });
+
+    test('handles rows with no SALE data - SPECIAL PRICING #1 should be null', () => {
+        const inputRow = {
+            Item: 'Chips',
+            UPC: '012345',
+            Description: 'Potato chips',
+            Department: 'Snacks',
+            REG_RETAIL: '2.99',
+            PACK: '1',
+            REGULARCOST: '0.8',
+            TAX1: 'Y',
+            // No SALE fields
+            TPR_MULTIPLE: '1',
+            TPR_RETAIL: '2.49',
+            ITEM_SIZE: '100g',
+            ITEM_UOM: 'bag'
+        };
+
+        const { transformedRow } = transformRow(inputRow);
+
+        expect(transformedRow['SPECIAL PRICING #1']).toBe('');
+        expect(transformedRow.SALE_RETAIL).toBe('');
+    });
+
+    test('handles rows with no TPR data - SPECIAL PRICING #2 should be null', () => {
+        const inputRow = {
+            Item: 'Chips',
+            UPC: '012345',
+            Description: 'Potato chips',
+            Department: 'Snacks',
+            REG_RETAIL: '2.99',
+            PACK: '1',
+            REGULARCOST: '0.8',
+            TAX1: 'Y',
+            SALE_MULTIPLE: '1',
+            SALE_RETAIL: '1.99',
+            // No TPR fields
+            ITEM_SIZE: '100g',
+            ITEM_UOM: 'bag'
+        };
+
+        const { transformedRow } = transformRow(inputRow);
+
+        expect(transformedRow['SPECIAL PRICING #2']).toBe('');
+        expect(transformedRow.TPR_RETAIL).toBe('');
+    });
+
+    test('preserves Department ID when original data is provided', () => {
+        const inputRow = {
+            Item: 'Chips',
+            UPC: '012345',
+            Description: 'Potato chips',
+            Department: 'Beverages', // Changed from original
+            REG_RETAIL: '2.99'
+        };
+
+        const options = {
+            originalData: {
+                'Chips': {
+                    Department: 'Snacks' // Original value
+                }
+            }
+        };
+
+        const { transformedRow, warnings } = transformRow(inputRow, {}, options);
+
+        expect(transformedRow.Department).toBe('Snacks'); // Should use original
+        expect(warnings.some(w => w.includes('Department ID changed'))).toBe(true);
+    });
+});
+
+describe('preserveDepartmentID', () => {
+    test('preserves original department when values differ', () => {
+        const result = preserveDepartmentID('Beverages', 'Snacks');
+
+        expect(result.value).toBe('Snacks');
+        expect(result.warning).toContain('Department ID changed');
+        expect(result.warning).toContain('Snacks');
+        expect(result.warning).toContain('Beverages');
+    });
+
+    test('uses incoming value when no original provided', () => {
+        const result = preserveDepartmentID('Beverages', null);
+
+        expect(result.value).toBe('Beverages');
+        expect(result.warning).toBe(null);
+    });
+
+    test('uses incoming value when values match', () => {
+        const result = preserveDepartmentID('Snacks', 'Snacks');
+
+        expect(result.value).toBe('Snacks');
+        expect(result.warning).toBe(null);
+    });
+
+    test('handles empty incoming department', () => {
+        const result = preserveDepartmentID('', 'Snacks');
+
+        expect(result.value).toBe('Snacks');
+        expect(result.warning).toContain('Department ID changed');
     });
 });
 

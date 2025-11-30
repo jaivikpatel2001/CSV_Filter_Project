@@ -27,6 +27,12 @@ A full-stack MERN (MongoDB, Express, React, Node.js) application for transformin
 - 🎨 **Premium UI**: Modern dark theme with vibrant gradients and animations
 - 🔒 **Type Safety**: Comprehensive validation and error handling
 
+## 📚 Documentation
+
+- **[Quick Reference Guide](QUICK_REFERENCE.md)** - Fast lookup for transformation rules and examples
+- **[Transformation Rules](TRANSFORMATION_RULES.md)** - Detailed explanation of all transformation logic
+- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** - Technical details and recent changes
+
 ## 📋 Transformation Rules
 
 ### Columns Removed
@@ -49,6 +55,11 @@ A full-stack MERN (MongoDB, Express, React, Node.js) application for transformin
 - Remove exactly one leading zero if present
 - Example: `012345` → `12345`
 
+#### Department (D)
+- **NEW**: Preserve original Department ID if incoming value differs
+- If original data available and values differ: use original with warning
+- If no original data or values match: use incoming value
+
 #### TAX1
 - `Y` or `y` → `1`
 - `N` or `n` → `` (empty)
@@ -66,19 +77,23 @@ A full-stack MERN (MongoDB, Express, React, Node.js) application for transformin
 #### Special Pricing Logic
 
 **SALE_MULTIPLE:**
-- If `SALE_MULTIPLE <= 1`:
+- **NEW**: If no Sale data (no SALE_RETAIL, SALE_COST, or dates):
+  - `SPECIAL PRICING #1` = `` (null/empty)
+- If Sale data exists and `SALE_MULTIPLE <= 1`:
   - Keep `SALE_RETAIL` unchanged
   - Add `SPECIAL PRICING #1 = "0"`
-- If `SALE_MULTIPLE > 1`:
+- If Sale data exists and `SALE_MULTIPLE > 1`:
   - Set `SALE_GROUP = original SALE_RETAIL`
   - Set `SALE_RETAIL = REG_RETAIL`
   - Add `SPECIAL PRICING #1 = "2"`
 
 **TPR_MULTIPLE:**
-- If `TPR_MULTIPLE <= 1`:
+- **NEW**: If no TRP data (no TPR_RETAIL, TPR_COST, or dates):
+  - `SPECIAL PRICING #2` = `` (null/empty)
+- If TRP data exists and `TPR_MULTIPLE <= 1`:
   - Keep `TPR_RETAIL` unchanged
   - Add `SPECIAL PRICING #2 = "0"`
-- If `TPR_MULTIPLE > 1`:
+- If TRP data exists and `TPR_MULTIPLE > 1`:
   - Set `TRP_GROUP = original TPR_RETAIL`
   - Set `TPR_RETAIL = REG_RETAIL`
   - Add `SPECIAL PRICING #2 = "2"`

@@ -24,19 +24,42 @@ export function transformUPC(upc) {
  */
 export function transformTAX1(tax1) {
   if (!tax1) return { value: '', warning: null };
-  
+
   const tax1Str = String(tax1).trim().toUpperCase();
-  
+
   if (tax1Str === 'Y') {
     return { value: '1', warning: null };
   } else if (tax1Str === 'N') {
     return { value: '', warning: null };
   } else {
-    return { 
-      value: tax1, 
-      warning: `TAX1 has unexpected value: "${tax1}" (expected Y or N)` 
+    return {
+      value: tax1,
+      warning: `TAX1 has unexpected value: "${tax1}" (expected Y or N)`
     };
   }
+}
+
+/**
+ * Preserve original Department ID if incoming value differs
+ * @param {string} incomingDept - Department from current file
+ * @param {string} originalDept - Department from original source
+ * @returns {{value: string, warning: string|null}}
+ */
+export function preserveDepartmentID(incomingDept, originalDept) {
+  // If no original data available, use incoming value
+  if (!originalDept) {
+    return { value: incomingDept || '', warning: null };
+  }
+
+  // If values differ, preserve original
+  if (incomingDept !== originalDept) {
+    return {
+      value: originalDept,
+      warning: `Department ID changed from "${originalDept}" to "${incomingDept}" - using original value`
+    };
+  }
+
+  return { value: incomingDept || '', warning: null };
 }
 
 /**
@@ -46,11 +69,11 @@ export function transformTAX1(tax1) {
  */
 export function parseNumeric(value) {
   if (value === null || value === undefined || value === '') return null;
-  
+
   // Remove currency symbols and non-numeric except . and -
   const cleaned = String(value).replace(/[^0-9.-]/g, '');
   const parsed = parseFloat(cleaned);
-  
+
   return isNaN(parsed) ? null : parsed;
 }
 
@@ -61,9 +84,9 @@ export function parseNumeric(value) {
  */
 export function normalizeDate(dateStr) {
   if (!dateStr) return { value: '', warning: null };
-  
+
   const str = String(dateStr).trim();
-  
+
   // Try various formats
   const formats = [
     // YYYY-MM-DD
@@ -73,12 +96,12 @@ export function normalizeDate(dateStr) {
     // DD-MM-YYYY
     /^(\d{1,2})-(\d{1,2})-(\d{4})$/,
   ];
-  
+
   for (let i = 0; i < formats.length; i++) {
     const match = str.match(formats[i]);
     if (match) {
       let year, month, day;
-      
+
       if (i === 0) {
         // YYYY-MM-DD
         [, year, month, day] = match;
@@ -89,29 +112,29 @@ export function normalizeDate(dateStr) {
         // DD-MM-YYYY
         [, day, month, year] = match;
       }
-      
+
       // Pad month and day
       month = month.padStart(2, '0');
       day = day.padStart(2, '0');
-      
+
       // Basic validation
       const monthNum = parseInt(month);
       const dayNum = parseInt(day);
-      
+
       if (monthNum < 1 || monthNum > 12 || dayNum < 1 || dayNum > 31) {
-        return { 
-          value: '', 
-          warning: `Invalid date: "${dateStr}"` 
+        return {
+          value: '',
+          warning: `Invalid date: "${dateStr}"`
         };
       }
-      
+
       return { value: `${year}-${month}-${day}`, warning: null };
     }
   }
-  
-  return { 
-    value: '', 
-    warning: `Could not parse date: "${dateStr}"` 
+
+  return {
+    value: '',
+    warning: `Could not parse date: "${dateStr}"`
   };
 }
 
@@ -126,7 +149,7 @@ export function getColumnValue(row, columnName) {
   if (row.hasOwnProperty(columnName)) {
     return row[columnName];
   }
-  
+
   // Try case-insensitive match
   const lowerName = columnName.toLowerCase();
   for (const key in row) {
@@ -134,7 +157,7 @@ export function getColumnValue(row, columnName) {
       return row[key];
     }
   }
-  
+
   return undefined;
 }
 
@@ -148,55 +171,60 @@ export function getColumnValue(row, columnName) {
 export function transformRow(row, depositMapping = {}, options = {}) {
   const warnings = [];
   const transformedRow = {};
-  
+
   // Helper to get value case-insensitively
   const getValue = (name) => getColumnValue(row, name);
-  
+
   // 1. Status - Remove (skip)
-  
+
   // 2. Item - Keep
   transformedRow.Item = getValue('Item') || '';
-  
+
   // 3. UPC - Remove one leading zero
   const upc = getValue('UPC');
   transformedRow.UPC = transformUPC(upc);
-  
+
   // 4. CaseUPC - Remove (skip)
-  
+
   // 5. Description - Keep
   transformedRow.Description = getValue('Description') || '';
-  
-  // 6. Department - Keep
-  transformedRow.Department = getValue('Department') || '';
-  
+
+  // 6. Department - Keep (with preservation logic)
+  const deptResult = preserveDepartmentID(
+    getValue('Department'),
+    options.originalData?.[transformedRow.Item]?.Department
+  );
+  transformedRow.Department = deptResult.value;
+  if (deptResult.warning) warnings.push(deptResult.warning);
+
   // 7. MANUFACTURER - Remove (skip)
   // 8. REG_MULTIPLE - Remove (skip)
-  
+
   // 9. REG_RETAIL - Keep
   transformedRow.REG_RETAIL = getValue('REG_RETAIL') || '';
-  
+
   // 10. CASE_RETAIL - Remove (skip)
-  
+
   // 11. PACK - Keep
   transformedRow.PACK = getValue('PACK') || '';
-  
+
   // 12. REGULARCOST - Keep
   transformedRow.REGULARCOST = getValue('REGULARCOST') || '';
-  
+
   // 13. TAX1 - Transform
   const tax1Result = transformTAX1(getValue('TAX1'));
   transformedRow.TAX1 = tax1Result.value;
   if (tax1Result.warning) warnings.push(tax1Result.warning);
-  
+
   // 14. TAX2 - Remove (skip)
   // 15. TAX3 - Remove (skip)
-  
+
   // 16. FOOD_STAMP - Keep
   transformedRow.FOOD_STAMP = getValue('FOOD_STAMP') || '';
-  
+
   // 17. WIC - Keep
   transformedRow.WIC = getValue('WIC') || '';
-  
+
   // 18. BOTTLE_DEPOSIT - Map from deposit mapping
   const itemKey = transformedRow.UPC || transformedRow.Item;
   if (depositMapping && depositMapping[itemKey]) {
@@ -207,85 +235,108 @@ export function transformRow(row, depositMapping = {}, options = {}) {
       warnings.push(`No deposit mapping found for UPC/Item: ${itemKey}`);
     }
   }
-  
+
   // 19. CASE_DEPOSIT - Remove (skip)
   // 20. PRC_GRP - Remove (skip)
-  
+
   // 21. SALE_MULTIPLE - Special logic
   const saleMultiple = parseNumeric(getValue('SALE_MULTIPLE'));
   transformedRow.SALE_MULTIPLE = getValue('SALE_MULTIPLE') || '';
-  
+
   const saleRetail = getValue('SALE_RETAIL');
   const regRetail = getValue('REG_RETAIL');
-  
-  if (saleMultiple !== null && saleMultiple > 1) {
-    // n > 1: SALE_GROUP = original SALE_RETAIL, SALE_RETAIL = REG_RETAIL, SPECIAL PRICING #1 = 2
-    transformedRow.SALE_GROUP = saleRetail || '';
-    transformedRow.SALE_RETAIL = regRetail || '';
-    transformedRow['SPECIAL PRICING #1'] = '2';
+
+  // Check if SALE data exists (any sale-related field has a value)
+  const hasSaleData = saleRetail || getValue('SALE_COST') ||
+    getValue('SALE_START_DATE') || getValue('SALE_END_DATE') ||
+    (saleMultiple !== null && saleMultiple > 0);
+
+  if (hasSaleData) {
+    if (saleMultiple !== null && saleMultiple > 1) {
+      // n > 1: SALE_GROUP = original SALE_RETAIL, SALE_RETAIL = REG_RETAIL, SPECIAL PRICING #1 = 2
+      transformedRow.SALE_GROUP = saleRetail || '';
+      transformedRow.SALE_RETAIL = regRetail || '';
+      transformedRow['SPECIAL PRICING #1'] = '2';
+    } else {
+      // n <= 1: Keep SALE_RETAIL, SPECIAL PRICING #1 = 0
+      transformedRow.SALE_RETAIL = saleRetail || '';
+      transformedRow['SPECIAL PRICING #1'] = '0';
+    }
   } else {
-    // n <= 1: Keep SALE_RETAIL, SPECIAL PRICING #1 = 0
-    transformedRow.SALE_RETAIL = saleRetail || '';
-    transformedRow['SPECIAL PRICING #1'] = '0';
+    // No sale data - leave SPECIAL PRICING #1 null/empty
+    transformedRow.SALE_RETAIL = '';
+    transformedRow['SPECIAL PRICING #1'] = '';
   }
-  
+
   // 22. SALE_COST - Keep
   transformedRow.SALE_COST = getValue('SALE_COST') || '';
-  
+
   // 23. SALE_START_DATE - Keep and normalize
   const saleStartResult = normalizeDate(getValue('SALE_START_DATE'));
   transformedRow.SALE_START_DATE = saleStartResult.value;
   if (saleStartResult.warning) warnings.push(saleStartResult.warning);
-  
+
   // 24. SALE_END_DATE - Keep and normalize
   const saleEndResult = normalizeDate(getValue('SALE_END_DATE'));
   transformedRow.SALE_END_DATE = saleEndResult.value;
   if (saleEndResult.warning) warnings.push(saleEndResult.warning);
-  
+
   // 25. TPR_MULTIPLE - Special logic (mirror SALE_MULTIPLE)
   // Accept both TPR and TRP variants
   const tprMultiple = parseNumeric(getValue('TPR_MULTIPLE') || getValue('TRP_MULTIPLE'));
   transformedRow.TPR_MULTIPLE = getValue('TPR_MULTIPLE') || getValue('TRP_MULTIPLE') || '';
-  
+
   const tprRetail = getValue('TPR_RETAIL') || getValue('TRP_RETAIL');
-  
-  if (tprMultiple !== null && tprMultiple > 1) {
-    // n > 1: TRP_GROUP = TRP_RETAIL, TRP_RETAIL = REG_RETAIL, SPECIAL PRICING #2 = 2
-    transformedRow.TRP_GROUP = tprRetail || '';
-    transformedRow.TPR_RETAIL = regRetail || '';
-    transformedRow['SPECIAL PRICING #2'] = '2';
+
+  // Check if TPR data exists (any TPR-related field has a value)
+  const hasTprData = tprRetail || getValue('TPR_COST') || getValue('TRP_COST') ||
+    getValue('TPR_START_DATE') || getValue('TRP_START_DATE') ||
+    getValue('TPR_END_DATE') || getValue('TRP_END_DATE') ||
+    (tprMultiple !== null && tprMultiple > 0);
+
+  if (hasTprData) {
+    if (tprMultiple !== null && tprMultiple > 1) {
+      // n > 1: TRP_GROUP = TRP_RETAIL, TRP_RETAIL = REG_RETAIL, SPECIAL PRICING #2 = 2
+      transformedRow.TRP_GROUP = tprRetail || '';
+      transformedRow.TPR_RETAIL = regRetail || '';
+      transformedRow['SPECIAL PRICING #2'] = '2';
+    } else {
+      // n <= 1: Keep TPR_RETAIL, SPECIAL PRICING #2 = 0
+      transformedRow.TPR_RETAIL = tprRetail || '';
+      transformedRow['SPECIAL PRICING #2'] = '0';
+    }
   } else {
-    // n <= 1: Keep TPR_RETAIL, SPECIAL PRICING #2 = 0
-    transformedRow.TPR_RETAIL = tprRetail || '';
-    transformedRow['SPECIAL PRICING #2'] = '0';
+    // No TPR data - leave SPECIAL PRICING #2 null/empty
+    transformedRow.TPR_RETAIL = '';
+    transformedRow['SPECIAL PRICING #2'] = '';
   }
-  
+
   // 26. TPR_COST - Keep
   transformedRow.TPR_COST = getValue('TPR_COST') || getValue('TRP_COST') || '';
-  
+
   // 27. TPR_START_DATE - Keep and normalize
   const tprStartResult = normalizeDate(getValue('TPR_START_DATE') || getValue('TRP_START_DATE'));
   transformedRow.TPR_START_DATE = tprStartResult.value;
   if (tprStartResult.warning) warnings.push(tprStartResult.warning);
-  
+
   // 28. TPR_END_DATE - Keep and normalize
   const tprEndResult = normalizeDate(getValue('TPR_END_DATE') || getValue('TRP_END_DATE'));
   transformedRow.TPR_END_DATE = tprEndResult.value;
   if (tprEndResult.warning) warnings.push(tprEndResult.warning);
-  
+
   // 29-32. FUTURE_* - Remove (skip)
-  
+
   // 33. BRAND - Remove (skip)
-  
+
   // 34. ITEM_SIZE - Keep
   transformedRow.ITEM_SIZE = getValue('ITEM_SIZE') || '';
-  
+
   // 35. ITEM_UOM - Keep
   transformedRow.ITEM_UOM = getValue('ITEM_UOM') || '';
-  
+
   // 36. PBHN - Remove (skip)
   // 37. CLASS - Remove (skip)
-  
+
   return { transformedRow, warnings };
 }
 
