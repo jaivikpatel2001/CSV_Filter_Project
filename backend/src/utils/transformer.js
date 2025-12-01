@@ -89,6 +89,8 @@ export function normalizeDate(dateStr) {
 
   // Try various formats
   const formats = [
+    // YYYYMMDD (compact format)
+    /^(\d{4})(\d{2})(\d{2})$/,
     // YYYY-MM-DD
     /^(\d{4})-(\d{1,2})-(\d{1,2})$/,
     // MM/DD/YYYY
@@ -103,9 +105,12 @@ export function normalizeDate(dateStr) {
       let year, month, day;
 
       if (i === 0) {
-        // YYYY-MM-DD
+        // YYYYMMDD
         [, year, month, day] = match;
       } else if (i === 1) {
+        // YYYY-MM-DD
+        [, year, month, day] = match;
+      } else if (i === 2) {
         // MM/DD/YYYY
         [, month, day, year] = match;
       } else {
@@ -226,13 +231,40 @@ export function transformRow(row, depositMapping = {}, options = {}) {
   transformedRow.WIC = getValue('WIC') || '';
 
   // 18. BOTTLE_DEPOSIT - Map from deposit mapping
-  const itemKey = transformedRow.UPC || transformedRow.Item;
-  if (depositMapping && depositMapping[itemKey]) {
-    transformedRow.BOTTLE_DEPOSIT = depositMapping[itemKey];
+  // First, check if there's already a BOTTLE_DEPOSIT value in the row
+  const existingDeposit = getValue('BOTTLE_DEPOSIT');
+
+  // Try to map the existing deposit amount to an ID
+  if (existingDeposit && depositMapping) {
+    // Try exact match first
+    if (depositMapping[existingDeposit]) {
+      transformedRow.BOTTLE_DEPOSIT = depositMapping[existingDeposit];
+    } else {
+      // Try normalized amount (e.g., '0.60' -> '0.6')
+      const normalizedDeposit = parseNumeric(existingDeposit);
+      if (normalizedDeposit !== null && depositMapping[normalizedDeposit.toString()]) {
+        transformedRow.BOTTLE_DEPOSIT = depositMapping[normalizedDeposit.toString()];
+      } else {
+        // Otherwise, try to map by UPC or Item
+        const itemKey = transformedRow.UPC || transformedRow.Item;
+        if (depositMapping[itemKey]) {
+          transformedRow.BOTTLE_DEPOSIT = depositMapping[itemKey];
+        } else {
+          // Keep the existing value if no mapping found
+          transformedRow.BOTTLE_DEPOSIT = existingDeposit;
+        }
+      }
+    }
   } else {
-    transformedRow.BOTTLE_DEPOSIT = '';
-    if (itemKey) {
-      warnings.push(`No deposit mapping found for UPC/Item: ${itemKey}`);
+    // No existing deposit, try to map by UPC or Item
+    const itemKey = transformedRow.UPC || transformedRow.Item;
+    if (depositMapping && depositMapping[itemKey]) {
+      transformedRow.BOTTLE_DEPOSIT = depositMapping[itemKey];
+    } else {
+      transformedRow.BOTTLE_DEPOSIT = '';
+      if (itemKey) {
+        warnings.push(`No deposit mapping found for UPC/Item: ${itemKey}`);
+      }
     }
   }
 

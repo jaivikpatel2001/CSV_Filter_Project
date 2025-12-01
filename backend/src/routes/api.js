@@ -125,7 +125,7 @@ router.get('/preview/:uploadId', async (req, res) => {
  */
 router.post('/transform', async (req, res) => {
     try {
-        const { uploadId, depositMapId, outputFormat = 'csv' } = req.body;
+        const { uploadId, outputFormat = 'csv' } = req.body;
 
         if (!uploadId) {
             return res.status(400).json({ error: 'uploadId is required' });
@@ -137,13 +137,35 @@ router.post('/transform', async (req, res) => {
             return res.status(404).json({ error: 'Upload not found' });
         }
 
-        // Load deposit mapping if provided
+        // Load deposit mapping from hardcoded file
         let depositMapping = {};
-        if (depositMapId) {
-            const depositMapRecord = await DepositMap.findOne({ depositMapId });
-            if (depositMapRecord) {
-                depositMapping = Object.fromEntries(depositMapRecord.mappings);
+        try {
+            const depositMappingPath = path.join(process.cwd(), 'sample-data', 'deposit-mapping.csv');
+            if (fs.existsSync(depositMappingPath)) {
+                const rows = await parseFile(depositMappingPath);
+
+                rows.forEach(row => {
+                    // New format: Id, Name, Amount
+                    const id = row.Id || row.ID || row.id;
+                    const amount = row.Amount || row.amount || row.AMOUNT;
+
+                    // Map Amount -> Id (for replacing amounts with IDs)
+                    if (amount && id) {
+                        // Normalize amount to handle different formats (0.05, .05, etc.)
+                        const normalizedAmount = parseFloat(amount).toString();
+                        depositMapping[normalizedAmount] = id;
+                        // Also store with original format
+                        depositMapping[amount.toString().trim()] = id;
+                    }
+                });
+
+                console.log(`Loaded ${Object.keys(depositMapping).length / 2} deposit mappings from hardcoded file`);
+            } else {
+                console.warn('Deposit mapping file not found at:', depositMappingPath);
             }
+        } catch (error) {
+            console.error('Error loading deposit mapping:', error);
+            // Continue without deposit mapping
         }
 
         // Create transform record
@@ -154,7 +176,6 @@ router.post('/transform', async (req, res) => {
         const transformRecord = new Transform({
             transformId,
             uploadId,
-            depositMapId,
             outputPath,
             outputFormat,
             status: 'processing'
@@ -281,16 +302,32 @@ router.post('/upload-deposit-map', upload.single('file'), async (req, res) => {
         const depositMapId = uuidv4();
 
         // Parse deposit mapping file
-        // Expected columns: UPC, Item, DepositPrice, DepositID
+        // Expected columns: Id, Name, Amount (from deposit-mapping.csv)
+        // OR: UPC, Item, DepositPrice, DepositID (legacy format)
         const rows = await parseFile(req.file.path);
 
         const mappings = new Map();
 
         rows.forEach(row => {
+            // New format: Id, Name, Amount
+            const id = row.Id || row.ID || row.id;
+            const amount = row.Amount || row.amount || row.AMOUNT;
+
+            // Legacy format: UPC, Item, DepositID
             const upc = row.UPC || row.upc;
             const item = row.Item || row.item || row.ITEM;
             const depositId = row.DepositID || row.depositId || row.DEPOSITID || row.DepositPrice;
 
+            // Map Amount -> Id (for replacing amounts with IDs)
+            if (amount && id) {
+                // Normalize amount to handle different formats (0.05, .05, etc.)
+                const normalizedAmount = parseFloat(amount).toString();
+                mappings.set(normalizedAmount, id);
+                // Also store with original format
+                mappings.set(amount.toString().trim(), id);
+            }
+
+            // Legacy mappings: UPC/Item -> DepositID
             if (upc && depositId) {
                 mappings.set(upc, depositId);
             }

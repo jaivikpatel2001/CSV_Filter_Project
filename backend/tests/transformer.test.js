@@ -97,6 +97,13 @@ describe('normalizeDate', () => {
         });
     });
 
+    test('normalizes YYYYMMDD format (compact)', () => {
+        expect(normalizeDate('20251129')).toEqual({
+            value: '2025-11-29',
+            warning: null
+        });
+    });
+
     test('normalizes MM/DD/YYYY format', () => {
         expect(normalizeDate('11/01/2025')).toEqual({
             value: '2025-11-01',
@@ -249,6 +256,85 @@ describe('transformRow', () => {
 
         expect(transformedRow.BOTTLE_DEPOSIT).toBe('');
         expect(warnings.some(w => w.includes('No deposit mapping'))).toBe(true);
+    });
+
+    test('replaces deposit amount with ID from mapping', () => {
+        const inputRow = {
+            Item: 'Beer 6pk',
+            UPC: '11111',
+            Description: 'Beer 6 pack',
+            Department: 'Beverages',
+            REG_RETAIL: '9.99',
+            BOTTLE_DEPOSIT: '0.3'
+        };
+
+        const depositMapping = {
+            '0.3': '26'  // Amount -> ID mapping
+        };
+
+        const { transformedRow, warnings } = transformRow(inputRow, depositMapping);
+
+        expect(transformedRow.BOTTLE_DEPOSIT).toBe('26');
+        expect(warnings.length).toBe(0);
+    });
+
+    test('replaces deposit amount with ID using normalized amount', () => {
+        const inputRow = {
+            Item: 'Beer 12pk',
+            UPC: '22222',
+            Description: 'Beer 12 pack',
+            Department: 'Beverages',
+            REG_RETAIL: '15.99',
+            BOTTLE_DEPOSIT: '0.60'
+        };
+
+        const depositMapping = {
+            '0.6': '27'  // Normalized amount -> ID mapping
+        };
+
+        const { transformedRow, warnings } = transformRow(inputRow, depositMapping);
+
+        expect(transformedRow.BOTTLE_DEPOSIT).toBe('27');
+        expect(warnings.length).toBe(0);
+    });
+
+    test('keeps existing deposit amount when no mapping found', () => {
+        const inputRow = {
+            Item: 'Beer 6pk',
+            UPC: '11111',
+            Description: 'Beer 6 pack',
+            Department: 'Beverages',
+            REG_RETAIL: '9.99',
+            BOTTLE_DEPOSIT: '0.3'
+        };
+
+        const depositMapping = {
+            '0.5': '34'  // Different amount
+        };
+
+        const { transformedRow, warnings } = transformRow(inputRow, depositMapping);
+
+        expect(transformedRow.BOTTLE_DEPOSIT).toBe('0.3');  // Keeps original
+        expect(warnings.length).toBe(0);
+    });
+
+    test('uses UPC mapping when no deposit amount in row', () => {
+        const inputRow = {
+            Item: 'Beer 6pk',
+            UPC: '11111',
+            Description: 'Beer 6 pack',
+            Department: 'Beverages',
+            REG_RETAIL: '9.99'
+        };
+
+        const depositMapping = {
+            '11111': '26'  // UPC -> ID mapping
+        };
+
+        const { transformedRow, warnings } = transformRow(inputRow, depositMapping);
+
+        expect(transformedRow.BOTTLE_DEPOSIT).toBe('26');
+        expect(warnings.length).toBe(0);
     });
 
     test('handles case-insensitive column names', () => {

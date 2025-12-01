@@ -128,13 +128,12 @@ Get preview of uploaded file with transformation details.
 
 **POST** `/api/transform`
 
-Start transformation of uploaded file.
+Start transformation of uploaded file. The system automatically uses the deposit mapping from `sample-data/deposit-mapping.csv`.
 
 **Request:**
 ```json
 {
   "uploadId": "uuid",
-  "depositMapId": "uuid (optional)",
   "outputFormat": "csv"
 }
 ```
@@ -147,6 +146,8 @@ Start transformation of uploaded file.
   "status": "processing"
 }
 ```
+
+**Note:** Deposit mapping is automatically loaded from the hardcoded file at `backend/sample-data/deposit-mapping.csv`. No need to upload or specify a deposit mapping file.
 
 #### 4. Get Transform Status
 
@@ -175,15 +176,31 @@ Download the transformed CSV file.
 **Response:**
 - File download (CSV format)
 
-#### 6. Upload Deposit Mapping
+#### 6. Upload Deposit Mapping (Optional - Not Required)
 
 **POST** `/api/upload-deposit-map`
 
-Upload a deposit mapping file.
+> **Note:** This endpoint is optional. The system automatically uses the hardcoded deposit mapping file at `backend/sample-data/deposit-mapping.csv` during transformation. You only need this if you want to use a different mapping file.
+
+Upload a custom deposit mapping file to map bottle deposit amounts to IDs.
 
 **Request:**
 - Content-Type: `multipart/form-data`
-- Body: `file` (CSV/Excel with columns: UPC, Item, DepositPrice, DepositID)
+- Body: `file` (CSV/Excel with columns: `Id`, `Name`, `Amount` OR legacy format: `UPC`, `Item`, `DepositID`)
+
+**New Format (Recommended):**
+```csv
+Id,Name,Amount
+23,Bottle Deposit,0.05
+26,Beer 6pk,0.3
+27,Beer 12pk,0.6
+```
+
+**Legacy Format (Still Supported):**
+```csv
+UPC,Item,DepositID
+12345,Beer 6pk,26
+```
 
 **Response:**
 ```json
@@ -194,6 +211,12 @@ Upload a deposit mapping file.
   "message": "Deposit mapping uploaded successfully"
 }
 ```
+
+**How it works:**
+- If your CSV has a `BOTTLE_DEPOSIT` column with amounts (e.g., "0.3"), the system will replace them with the corresponding IDs (e.g., "26")
+- Handles normalized amounts (e.g., "0.60" matches "0.6")
+- Falls back to UPC/Item mapping if no amount is present
+- See [DEPOSIT_MAPPING_GUIDE.md](./DEPOSIT_MAPPING_GUIDE.md) for detailed examples
 
 #### 7. List Deposit Maps
 
@@ -307,12 +330,18 @@ The transformation engine applies the following rules:
 - Other values: preserved with warning
 
 #### BOTTLE_DEPOSIT
-- Mapped from deposit mapping file (UPC/Item → DepositID)
-- If no mapping found: empty with warning
+- **Priority 1**: If the row has a BOTTLE_DEPOSIT value (amount), try to map it to an ID from the deposit mapping
+  - Example: `0.3` → `26` (if mapping exists)
+  - Handles normalized amounts: `0.60` matches `0.6`
+- **Priority 2**: If no amount mapping found, try mapping by UPC or Item number
+  - Example: UPC `12345` → `26` (if mapping exists)
+- **Priority 3**: If no mapping found, keep the original value
+- Warnings are only generated if UPC/Item has no mapping and no existing deposit value
 
 #### Dates (SALE_START_DATE, SALE_END_DATE, TPR_START_DATE, TPR_END_DATE)
 - Normalized to `YYYY-MM-DD` format
-- Accepts: `YYYY-MM-DD`, `MM/DD/YYYY`, `DD-MM-YYYY`
+- Accepts: `YYYYMMDD`, `YYYY-MM-DD`, `MM/DD/YYYY`, `DD-MM-YYYY`
+- Example: `20251129` → `2025-11-29`
 - Invalid dates: empty with warning
 
 ### Special Pricing Logic
@@ -363,7 +392,8 @@ npm run test:coverage
 Sample files are provided in `sample-data/`:
 
 - `sample-input.csv` - Example input file with various test cases
-- `deposit-mapping.csv` - Example deposit mapping file
+- `deposit-mapping.csv` - Example deposit mapping file (Id, Name, Amount format)
+- `sample-with-deposits.csv` - Example CSV with bottle deposit amounts to demonstrate the mapping feature
 
 ## Project Structure
 
