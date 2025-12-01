@@ -133,7 +133,8 @@ export function normalizeDate(dateStr) {
         };
       }
 
-      return { value: `${year}-${month}-${day}`, warning: null };
+      // Return YYYYMMDD format
+      return { value: `${year}${month}${day}`, warning: null };
     }
   }
 
@@ -271,12 +272,16 @@ export function transformRow(row, depositMapping = {}, options = {}) {
   // 19. CASE_DEPOSIT - Remove (skip)
   // 20. PRC_GRP - Remove (skip)
 
-  // 21. SALE_MULTIPLE - Special logic
+  // 21. SALE_MULTIPLE and SPECIAL QUANTITY - Special logic
   const saleMultiple = parseNumeric(getValue('SALE_MULTIPLE'));
+  // Keep original SALE_MULTIPLE column
   transformedRow.SALE_MULTIPLE = getValue('SALE_MULTIPLE') || '';
 
   const saleRetail = getValue('SALE_RETAIL');
   const regRetail = getValue('REG_RETAIL');
+
+  // Initialize SALE_GROUP default
+  transformedRow.SALE_GROUP = '';
 
   // Check if SALE data exists (any sale-related field has a value)
   const hasSaleData = saleRetail || getValue('SALE_COST') ||
@@ -285,19 +290,22 @@ export function transformRow(row, depositMapping = {}, options = {}) {
 
   if (hasSaleData) {
     if (saleMultiple !== null && saleMultiple > 1) {
-      // n > 1: SALE_GROUP = original SALE_RETAIL, SALE_RETAIL = REG_RETAIL, SPECIAL PRICING #1 = 2
+      // n > 1: SALE_GROUP = original SALE_RETAIL, SALE_RETAIL = REG_RETAIL, SPECIAL PRICING #1 = 2, SPECIAL QUANTITY = original value
       transformedRow.SALE_GROUP = saleRetail || '';
       transformedRow.SALE_RETAIL = regRetail || '';
       transformedRow['SPECIAL PRICING #1'] = '2';
+      transformedRow['SPECIAL QUANTITY 1'] = getValue('SALE_MULTIPLE') || '';
     } else {
-      // n <= 1: Keep SALE_RETAIL, SPECIAL PRICING #1 = 0
+      // n <= 1: Keep SALE_RETAIL, SPECIAL PRICING #1 = 0, SPECIAL QUANTITY = empty (null)
       transformedRow.SALE_RETAIL = saleRetail || '';
       transformedRow['SPECIAL PRICING #1'] = '0';
+      transformedRow['SPECIAL QUANTITY 1'] = '';
     }
   } else {
-    // No sale data - leave SPECIAL PRICING #1 null/empty
+    // No sale data - leave SPECIAL PRICING #1 and SPECIAL QUANTITY null/empty
     transformedRow.SALE_RETAIL = '';
     transformedRow['SPECIAL PRICING #1'] = '';
+    transformedRow['SPECIAL QUANTITY 1'] = '';
   }
 
   // 22. SALE_COST - Keep
@@ -313,12 +321,16 @@ export function transformRow(row, depositMapping = {}, options = {}) {
   transformedRow.SALE_END_DATE = saleEndResult.value;
   if (saleEndResult.warning) warnings.push(saleEndResult.warning);
 
-  // 25. TPR_MULTIPLE - Special logic (mirror SALE_MULTIPLE)
+  // 25. TPR_MULTIPLE and SPECIAL QUANTITY - Special logic (mirror SALE_MULTIPLE)
   // Accept both TPR and TRP variants
   const tprMultiple = parseNumeric(getValue('TPR_MULTIPLE') || getValue('TRP_MULTIPLE'));
+  // Keep original TPR_MULTIPLE column
   transformedRow.TPR_MULTIPLE = getValue('TPR_MULTIPLE') || getValue('TRP_MULTIPLE') || '';
 
   const tprRetail = getValue('TPR_RETAIL') || getValue('TRP_RETAIL');
+
+  // Initialize TRP_GROUP default (though not in output columns explicitly, good for consistency)
+  transformedRow.TRP_GROUP = '';
 
   // Check if TPR data exists (any TPR-related field has a value)
   const hasTprData = tprRetail || getValue('TPR_COST') || getValue('TRP_COST') ||
@@ -328,19 +340,22 @@ export function transformRow(row, depositMapping = {}, options = {}) {
 
   if (hasTprData) {
     if (tprMultiple !== null && tprMultiple > 1) {
-      // n > 1: TRP_GROUP = TRP_RETAIL, TRP_RETAIL = REG_RETAIL, SPECIAL PRICING #2 = 2
+      // n > 1: TRP_GROUP = TRP_RETAIL, TRP_RETAIL = REG_RETAIL, SPECIAL PRICING #2 = 2, SPECIAL QUANTITY = original value
       transformedRow.TRP_GROUP = tprRetail || '';
       transformedRow.TPR_RETAIL = regRetail || '';
       transformedRow['SPECIAL PRICING #2'] = '2';
+      transformedRow['SPECIAL QUANTITY 2'] = getValue('TPR_MULTIPLE') || getValue('TRP_MULTIPLE') || '';
     } else {
-      // n <= 1: Keep TPR_RETAIL, SPECIAL PRICING #2 = 0
+      // n <= 1: Keep TPR_RETAIL, SPECIAL PRICING #2 = 0, SPECIAL QUANTITY = empty (null)
       transformedRow.TPR_RETAIL = tprRetail || '';
       transformedRow['SPECIAL PRICING #2'] = '0';
+      transformedRow['SPECIAL QUANTITY 2'] = '';
     }
   } else {
-    // No TPR data - leave SPECIAL PRICING #2 null/empty
+    // No TPR data - leave SPECIAL PRICING #2 and SPECIAL QUANTITY null/empty
     transformedRow.TPR_RETAIL = '';
     transformedRow['SPECIAL PRICING #2'] = '';
+    transformedRow['SPECIAL QUANTITY 2'] = '';
   }
 
   // 26. TPR_COST - Keep
@@ -391,17 +406,19 @@ export function getOutputColumns() {
     'BOTTLE_DEPOSIT',
     'SALE_GROUP',
     'SALE_MULTIPLE',
+    'SPECIAL PRICING #1',
+    'SPECIAL QUANTITY 1',
     'SALE_RETAIL',
     'SALE_COST',
     'SALE_START_DATE',
     'SALE_END_DATE',
-    'SPECIAL PRICING #1',
     'TPR_MULTIPLE',
+    'SPECIAL PRICING #2',
+    'SPECIAL QUANTITY 2',
     'TPR_RETAIL',
     'TPR_COST',
     'TPR_START_DATE',
     'TPR_END_DATE',
-    'SPECIAL PRICING #2',
     'ITEM_SIZE',
     'ITEM_UOM'
   ];
