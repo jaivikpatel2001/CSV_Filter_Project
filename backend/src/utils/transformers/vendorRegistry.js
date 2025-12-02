@@ -5,6 +5,7 @@
  */
 
 import * as agneTransformer from './agne.js';
+import * as pineStateSpiritTransformer from './pine-state-spirits.js';
 
 /**
  * Registry of all available vendor transformers
@@ -12,6 +13,7 @@ import * as agneTransformer from './agne.js';
  */
 const vendorRegistry = {
     AGNE: agneTransformer,
+    PINE_STATE_SPIRITS: pineStateSpiritTransformer,
     // Add more vendors here as they are implemented
     // Example:
     // VENDOR_X: vendorXTransformer,
@@ -25,12 +27,16 @@ const vendorRegistry = {
 export function getAvailableVendors() {
     return Object.keys(vendorRegistry).map(vendorId => {
         const vendor = vendorRegistry[vendorId];
+        // Try to find the config object (could be agneConfig, pineStateSpiritConfig, etc.)
+        const configKey = Object.keys(vendor).find(key => key.endsWith('Config'));
+        const config = configKey ? vendor[configKey] : {};
+
         return {
-            vendorId: vendor.agneConfig?.vendorId || vendorId,
-            vendorName: vendor.agneConfig?.vendorName || vendorId,
-            description: vendor.agneConfig?.description || 'No description available',
-            supportedFormats: vendor.agneConfig?.supportedFormats || ['csv'],
-            transformationRules: vendor.agneConfig?.transformationRules || {}
+            vendorId: config?.vendorId || vendorId,
+            vendorName: config?.vendorName || vendorId,
+            description: config?.description || 'No description available',
+            supportedFormats: config?.supportedFormats || ['csv'],
+            transformationRules: config?.transformationRules || {}
         };
     });
 }

@@ -90,32 +90,46 @@ export function normalizeDate(dateStr) {
     // Try various formats
     const formats = [
         // YYYYMMDD (compact format)
-        /^(\d{4})(\d{2})(\d{2})$/,
+        { regex: /^(\d{4})(\d{2})(\d{2})$/, type: 'YYYYMMDD' },
         // YYYY-MM-DD
-        /^(\d{4})-(\d{1,2})-(\d{1,2})$/,
+        { regex: /^(\d{4})-(\d{1,2})-(\d{1,2})$/, type: 'YYYY-MM-DD' },
         // MM/DD/YYYY
-        /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,
+        { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, type: 'MM/DD/YYYY' },
         // DD-MM-YYYY
-        /^(\d{1,2})-(\d{1,2})-(\d{4})$/,
+        { regex: /^(\d{1,2})-(\d{1,2})-(\d{4})$/, type: 'DD-MM-YYYY' },
+        // DD/MM/YY or DD/M/YY (2-digit year)
+        { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/, type: 'DD/MM/YY' },
+        // DD-MM-YY (2-digit year)
+        { regex: /^(\d{1,2})-(\d{1,2})-(\d{2})$/, type: 'DD-MM-YY' },
     ];
 
-    for (let i = 0; i < formats.length; i++) {
-        const match = str.match(formats[i]);
+    for (const format of formats) {
+        const match = str.match(format.regex);
         if (match) {
             let year, month, day;
 
-            if (i === 0) {
-                // YYYYMMDD
-                [, year, month, day] = match;
-            } else if (i === 1) {
-                // YYYY-MM-DD
-                [, year, month, day] = match;
-            } else if (i === 2) {
-                // MM/DD/YYYY
-                [, month, day, year] = match;
-            } else {
-                // DD-MM-YYYY
-                [, day, month, year] = match;
+            switch (format.type) {
+                case 'YYYYMMDD':
+                    [, year, month, day] = match;
+                    break;
+                case 'YYYY-MM-DD':
+                    [, year, month, day] = match;
+                    break;
+                case 'MM/DD/YYYY':
+                    [, month, day, year] = match;
+                    break;
+                case 'DD-MM-YYYY':
+                    [, day, month, year] = match;
+                    break;
+                case 'DD/MM/YY':
+                case 'DD-MM-YY':
+                    // DD/MM/YY or DD-MM-YY format
+                    [, day, month, year] = match;
+                    // Convert 2-digit year to 4-digit
+                    // Assume 00-49 = 2000-2049, 50-99 = 1950-1999
+                    const yearNum = parseInt(year);
+                    year = yearNum < 50 ? `20${year.padStart(2, '0')}` : `19${year.padStart(2, '0')}`;
+                    break;
             }
 
             // Pad month and day

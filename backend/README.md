@@ -7,10 +7,47 @@ Backend API server for the CSV/Excel transformation webapp. Built with Express, 
 - 📤 File upload (CSV, XLS, XLSX) with streaming support for large files
 - 👁️ Preview first 50 rows before transformation
 - 🔄 Deterministic column transformations based on business rules
+- 🏢 **Multi-vendor support** - Different transformation rules for different vendors
 - 💾 Bottle deposit mapping support
 - 📊 Transformation history and re-run capability
 - ⚡ Async processing with progress tracking
 - ✅ Comprehensive unit tests (>90% coverage)
+
+## Supported Vendors
+
+The system supports multiple vendor formats, each with their own transformation rules:
+
+### 1. AGNE (Default)
+- **Vendor ID**: `AGNE`
+- **Description**: Standard AGNE CSV transformation with special pricing logic
+- **Documentation**: [AGNE_README.md](src/utils/transformers/AGNE_README.md)
+- **Key Features**:
+  - UPC: Remove one leading zero
+  - Dates: Normalized to YYYYMMDD
+  - Special pricing with quantity support (SALE/TPR)
+  - Bottle deposit mapping
+
+### 2. Pine State Spirits – Monthly Specials
+- **Vendor ID**: `PINE_STATE_SPIRITS`
+- **Description**: Pine State Spirits monthly specials transformation
+- **Documentation**: [PINE_STATE_SPIRITS_README.md](src/utils/transformers/PINE_STATE_SPIRITS_README.md)
+- **Key Features**:
+  - UPC: Pad to 13 digits with leading zeros
+  - Dates: Convert to MM/DD/YYYY format
+  - Prices: Format to 2 decimal places
+  - Special Pricing Method: Always "0"
+
+### Adding New Vendors
+
+To add a new vendor:
+
+1. Create a new transformer file in `src/utils/transformers/`
+2. Export `config`, `transformRow()`, and `getOutputColumns()` functions
+3. Register the vendor in `src/utils/transformers/vendorRegistry.js`
+4. Create vendor-specific README documentation
+5. Restart the backend server
+
+See [example-vendor.js](src/utils/transformers/example-vendor.js) for a template.
 
 ## Prerequisites
 

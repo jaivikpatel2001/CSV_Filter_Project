@@ -76,7 +76,7 @@ const transformSchema = new mongoose.Schema({
     },
     outputFormat: {
         type: String,
-        enum: ['csv', 'xlsx'],
+        enum: ['csv', 'xlsx', 'xls'],
         default: 'csv'
     },
     vendorId: {

@@ -195,15 +195,23 @@ router.post('/transform', async (req, res) => {
         }
 
         // Create transform record
+        // Determine output format based on input
+        let finalOutputFormat = 'csv';
+        if (uploadRecord.fileType === 'excel') {
+            const ext = path.extname(uploadRecord.filename).toLowerCase();
+            if (ext === '.xls') finalOutputFormat = 'xls';
+            else finalOutputFormat = 'xlsx';
+        }
+
         const transformId = uuidv4();
         const outputDir = process.env.UPLOAD_DIR || './uploads';
-        const outputPath = path.join(outputDir, `${transformId}-output.csv`);
+        const outputPath = path.join(outputDir, `${transformId}-output.${finalOutputFormat}`);
 
         const transformRecord = new Transform({
             transformId,
             uploadId,
             outputPath,
-            outputFormat,
+            outputFormat: finalOutputFormat,
             vendorId,
             status: 'processing'
         });
@@ -306,9 +314,14 @@ router.get('/download/:transformId', async (req, res) => {
         }
 
         const uploadRecord = await Upload.findOne({ uploadId: transformRecord.uploadId });
-        const filename = uploadRecord
-            ? `transformed-${uploadRecord.filename}`
-            : 'transformed-output.csv';
+        const outputExt = path.extname(transformRecord.outputPath);
+        let filename = `transformed-output${outputExt}`;
+
+        if (uploadRecord && uploadRecord.filename) {
+            const originalName = uploadRecord.filename;
+            // Replace extension with correct output extension
+            filename = `transformed-${originalName.replace(/\.[^/.]+$/, "")}${outputExt}`;
+        }
 
         res.download(transformRecord.outputPath, filename);
     } catch (error) {

@@ -6,7 +6,7 @@
 import fs from 'fs';
 import csvParser from 'csv-parser';
 import { parse } from 'fast-csv';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx';
 import { Readable } from 'stream';
 
 /**
@@ -165,6 +165,18 @@ export async function streamProcessExcel(inputPath, outputPath, transformFn, pro
                     progressCallback(index + 1);
                 }
             });
+
+            // Check if output should be Excel
+            const outputExt = outputPath.split('.').pop().toLowerCase();
+            if (outputExt === 'xlsx' || outputExt === 'xls') {
+                const worksheet = XLSX.utils.json_to_sheet(transformedRows);
+                const newWorkbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(newWorkbook, worksheet, "Sheet1");
+                XLSX.writeFile(newWorkbook, outputPath);
+
+                resolve({ processed: rows.length, warnings });
+                return;
+            }
 
             // Write to CSV
             const writeStream = fs.createWriteStream(outputPath);
