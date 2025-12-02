@@ -39,6 +39,10 @@ const uploadSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.Mixed,
         default: []
     },
+    vendorId: {
+        type: String,
+        default: 'AGNE'
+    },
     status: {
         type: String,
         enum: ['uploaded', 'previewed', 'transformed', 'error'],
@@ -74,6 +78,10 @@ const transformSchema = new mongoose.Schema({
         type: String,
         enum: ['csv', 'xlsx'],
         default: 'csv'
+    },
+    vendorId: {
+        type: String,
+        default: 'AGNE'
     },
     rowsProcessed: {
         type: Number,
