@@ -1,17 +1,38 @@
 /**
  * Upload Page Component
- * Drag & drop file upload with preview
+ * Drag & drop file upload with preview and vendor selection
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
-import { uploadFile } from '../services/api';
+import { uploadFile, getVendors } from '../services/api';
 
 const UploadPage = () => {
     const navigate = useNavigate();
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState(null);
+    const [vendors, setVendors] = useState([]);
+    const [selectedVendor, setSelectedVendor] = useState('');
+    const [loadingVendors, setLoadingVendors] = useState(true);
+
+    // Load available vendors on mount
+    useEffect(() => {
+        const loadVendors = async () => {
+            try {
+                const data = await getVendors();
+                setVendors(data.vendors || []);
+                setSelectedVendor(data.defaultVendor || 'AGNE');
+            } catch (err) {
+                console.error('Failed to load vendors:', err);
+                setError('Failed to load vendor list');
+            } finally {
+                setLoadingVendors(false);
+            }
+        };
+
+        loadVendors();
+    }, []);
 
     const onDrop = useCallback(async (acceptedFiles) => {
         if (acceptedFiles.length === 0) return;
@@ -21,7 +42,7 @@ const UploadPage = () => {
         setError(null);
 
         try {
-            const response = await uploadFile(file);
+            const response = await uploadFile(file, selectedVendor);
             // Navigate to preview page with uploadId
             navigate(`/preview/${response.uploadId}`);
         } catch (err) {
@@ -30,7 +51,7 @@ const UploadPage = () => {
         } finally {
             setUploading(false);
         }
-    }, [navigate]);
+    }, [navigate, selectedVendor]);
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
@@ -43,15 +64,77 @@ const UploadPage = () => {
         disabled: uploading,
     });
 
+    // Get current vendor config for display
+    const currentVendor = vendors.find(v => v.vendorId === selectedVendor);
+
     return (
         <div className="container container-sm section">
             <div className="text-center mb-xl">
                 <h1>CSV/Excel Transformer</h1>
                 <p className="text-secondary">
-                    Upload your CSV or Excel file to transform it according to business rules
+                    Upload your CSV or Excel file to transform it according to vendor-specific business rules
                 </p>
             </div>
 
+            {/* Vendor Selection */}
+            <div className="card card-elevated mb-lg">
+                <div className="card-header">
+                    <h3 className="card-title">Select Vendor</h3>
+                </div>
+                <div className="card-body">
+                    {loadingVendors ? (
+                        <div className="text-center">
+                            <div className="spinner" style={{ margin: '20px auto' }}></div>
+                            <p className="text-secondary">Loading vendors...</p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="form-group">
+                                <label htmlFor="vendor-select" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
+                                    Choose transformation vendor:
+                                </label>
+                                <select
+                                    id="vendor-select"
+                                    value={selectedVendor}
+                                    onChange={(e) => setSelectedVendor(e.target.value)}
+                                    disabled={uploading}
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.75rem',
+                                        fontSize: 'var(--font-size-base)',
+                                        border: '1px solid var(--color-border)',
+                                        borderRadius: 'var(--border-radius)',
+                                        backgroundColor: 'var(--color-bg)',
+                                        color: 'var(--color-text)',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    {vendors.map(vendor => (
+                                        <option key={vendor.vendorId} value={vendor.vendorId}>
+                                            {vendor.vendorName} - {vendor.description}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {currentVendor && (
+                                <div className="mt-md" style={{
+                                    padding: '1rem',
+                                    backgroundColor: 'var(--color-bg-secondary)',
+                                    borderRadius: 'var(--border-radius)',
+                                    fontSize: 'var(--font-size-sm)'
+                                }}>
+                                    <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>
+                                        <strong>Supported formats:</strong> {currentVendor.supportedFormats.join(', ').toUpperCase()}
+                                    </p>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* File Upload */}
             <div className="card card-elevated">
                 <div
                     {...getRootProps()}
@@ -89,6 +172,7 @@ const UploadPage = () => {
                 )}
             </div>
 
+            {/* Process Steps */}
             <div className="card mt-xl">
                 <div className="card-header">
                     <h3 className="card-title">What happens next?</h3>
@@ -107,7 +191,7 @@ const UploadPage = () => {
                         <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⚙️</div>
                         <h4>2. Transform</h4>
                         <p className="text-secondary">
-                            Apply business rules and transformations to your data
+                            Apply vendor-specific business rules and transformations to your data
                         </p>
                     </div>
 
@@ -121,35 +205,34 @@ const UploadPage = () => {
                 </div>
             </div>
 
-            <div className="card mt-xl">
-                <div className="card-header">
-                    <h3 className="card-title">Transformation Rules</h3>
-                </div>
-
-                <div className="grid grid-2">
-                    <div>
-                        <h5>Columns Removed</h5>
-                        <ul style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-                            <li>Status, CaseUPC, MANUFACTURER</li>
-                            <li>REG_MULTIPLE, CASE_RETAIL</li>
-                            <li>TAX2, TAX3, CASE_DEPOSIT</li>
-                            <li>PRC_GRP, FUTURE_*, BRAND</li>
-                            <li>PBHN, CLASS</li>
-                        </ul>
+            {/* Transformation Rules */}
+            {currentVendor && currentVendor.transformationRules && (
+                <div className="card mt-xl">
+                    <div className="card-header">
+                        <h3 className="card-title">Transformation Rules - {currentVendor.vendorName}</h3>
                     </div>
 
-                    <div>
-                        <h5>Transformations Applied</h5>
-                        <ul style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-                            <li>UPC: Remove one leading zero</li>
-                            <li>TAX1: Y→1, N→empty</li>
-                            <li>Dates: Normalized to YYYY-MM-DD</li>
-                            <li>SALE/TPR: Special pricing logic</li>
-                            <li>BOTTLE_DEPOSIT: Mapped from deposit file</li>
-                        </ul>
+                    <div className="grid grid-2">
+                        <div>
+                            <h5>Columns Removed</h5>
+                            <ul style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+                                {currentVendor.transformationRules.columnsRemoved?.map((col, idx) => (
+                                    <li key={idx}>{col}</li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div>
+                            <h5>Transformations Applied</h5>
+                            <ul style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+                                {currentVendor.transformationRules.transformations?.map((rule, idx) => (
+                                    <li key={idx}>{rule}</li>
+                                ))}
+                            </ul>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };

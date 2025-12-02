@@ -9,7 +9,7 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { Upload, Transform, DepositMap } from '../models/models.js';
 import { parseFile, streamProcessFile, getFileType } from '../utils/fileProcessor.js';
-import { transformRow, getOutputColumns } from '../utils/transformer.js';
+import { transformRow, getOutputColumns, getAvailableVendors, getDefaultVendor } from '../utils/transformer.js';
 
 const router = express.Router();
 
@@ -44,8 +44,26 @@ const upload = multer({
 });
 
 /**
+ * GET /api/vendors
+ * Get list of available vendors
+ */
+router.get('/vendors', async (req, res) => {
+    try {
+        const vendors = getAvailableVendors();
+        res.json({
+            vendors,
+            defaultVendor: getDefaultVendor()
+        });
+    } catch (error) {
+        console.error('Vendors error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
  * POST /api/upload-file
  * Upload a CSV/Excel file for transformation
+ * Body: { vendorId?: string } (optional, defaults to AGNE)
  */
 router.post('/upload-file', upload.single('file'), async (req, res) => {
     try {
@@ -55,12 +73,13 @@ router.post('/upload-file', upload.single('file'), async (req, res) => {
 
         const uploadId = uuidv4();
         const fileType = getFileType(req.file.originalname);
+        const vendorId = req.body.vendorId || getDefaultVendor();
 
         // Parse preview (first 50 rows)
         const preview = await parseFile(req.file.path, 50);
         const columns = preview.length > 0 ? Object.keys(preview[0]) : [];
 
-        // Create upload record
+        // Create upload record with vendor info
         const uploadRecord = new Upload({
             uploadId,
             filename: req.file.originalname,
@@ -70,6 +89,7 @@ router.post('/upload-file', upload.single('file'), async (req, res) => {
             rowCount: preview.length, // Approximate for preview
             columns,
             preview,
+            vendorId,
             status: 'previewed'
         });
 
@@ -82,6 +102,7 @@ router.post('/upload-file', upload.single('file'), async (req, res) => {
             fileSize: req.file.size,
             preview,
             columns,
+            vendorId,
             message: 'File uploaded successfully'
         });
     } catch (error) {
@@ -104,6 +125,8 @@ router.get('/preview/:uploadId', async (req, res) => {
             return res.status(404).json({ error: 'Upload not found' });
         }
 
+        const vendorId = uploadRecord.vendorId || getDefaultVendor();
+
         res.json({
             uploadId: uploadRecord.uploadId,
             filename: uploadRecord.filename,
@@ -111,7 +134,8 @@ router.get('/preview/:uploadId', async (req, res) => {
             fileSize: uploadRecord.fileSize,
             columns: uploadRecord.columns,
             preview: uploadRecord.preview,
-            outputColumns: getOutputColumns()
+            vendorId,
+            outputColumns: getOutputColumns(vendorId)
         });
     } catch (error) {
         console.error('Preview error:', error);
@@ -136,6 +160,8 @@ router.post('/transform', async (req, res) => {
         if (!uploadRecord) {
             return res.status(404).json({ error: 'Upload not found' });
         }
+
+        const vendorId = uploadRecord.vendorId || getDefaultVendor();
 
         // Load deposit mapping from hardcoded file
         let depositMapping = {};
@@ -169,15 +195,24 @@ router.post('/transform', async (req, res) => {
         }
 
         // Create transform record
+        // Determine output format based on input
+        let finalOutputFormat = 'csv';
+        if (uploadRecord.fileType === 'excel') {
+            const ext = path.extname(uploadRecord.filename).toLowerCase();
+            if (ext === '.xls') finalOutputFormat = 'xls';
+            else finalOutputFormat = 'xlsx';
+        }
+
         const transformId = uuidv4();
         const outputDir = process.env.UPLOAD_DIR || './uploads';
-        const outputPath = path.join(outputDir, `${transformId}-output.csv`);
+        const outputPath = path.join(outputDir, `${transformId}-output.${finalOutputFormat}`);
 
         const transformRecord = new Transform({
             transformId,
             uploadId,
             outputPath,
-            outputFormat,
+            outputFormat: finalOutputFormat,
+            vendorId,
             status: 'processing'
         });
 
@@ -189,7 +224,7 @@ router.post('/transform', async (req, res) => {
                 const result = await streamProcessFile(
                     uploadRecord.originalPath,
                     outputPath,
-                    (row) => transformRow(row, depositMapping),
+                    (row) => transformRow(row, depositMapping, { vendorId }),
                     (processed) => {
                         // Progress callback (could emit via WebSocket)
                         console.log(`Processed ${processed} rows`);
@@ -214,6 +249,7 @@ router.post('/transform', async (req, res) => {
 
         res.json({
             transformId,
+            vendorId,
             message: 'Transformation started',
             status: 'processing'
         });
@@ -278,9 +314,14 @@ router.get('/download/:transformId', async (req, res) => {
         }
 
         const uploadRecord = await Upload.findOne({ uploadId: transformRecord.uploadId });
-        const filename = uploadRecord
-            ? `transformed-${uploadRecord.filename}`
-            : 'transformed-output.csv';
+        const outputExt = path.extname(transformRecord.outputPath);
+        let filename = `transformed-output${outputExt}`;
+
+        if (uploadRecord && uploadRecord.filename) {
+            const originalName = uploadRecord.filename;
+            // Replace extension with correct output extension
+            filename = `transformed-${originalName.replace(/\.[^/.]+$/, "")}${outputExt}`;
+        }
 
         res.download(transformRecord.outputPath, filename);
     } catch (error) {

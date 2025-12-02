@@ -14,13 +14,26 @@ const api = axios.create({
 });
 
 /**
+ * Get list of available vendors
+ * @returns {Promise<Object>} Vendors list with default vendor
+ */
+export const getVendors = async () => {
+    const response = await api.get('/vendors');
+    return response.data;
+};
+
+/**
  * Upload a file for transformation
  * @param {File} file - File to upload
+ * @param {string} vendorId - Vendor identifier (optional, defaults to AGNE)
  * @returns {Promise<Object>} Upload response with uploadId and preview
  */
-export const uploadFile = async (file) => {
+export const uploadFile = async (file, vendorId = null) => {
     const formData = new FormData();
     formData.append('file', file);
+    if (vendorId) {
+        formData.append('vendorId', vendorId);
+    }
 
     const response = await api.post('/upload-file', formData, {
         headers: {

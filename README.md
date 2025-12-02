@@ -33,7 +33,32 @@ A full-stack MERN (MongoDB, Express, React, Node.js) application for transformin
 - **[Transformation Rules](TRANSFORMATION_RULES.md)** - Detailed explanation of all transformation logic
 - **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** - Technical details and recent changes
 
-## 📋 Transformation Rules
+### Vendor-Specific Documentation
+
+The system supports multiple vendor formats, each with their own transformation rules:
+
+- **[AGNE Vendor](backend/src/utils/transformers/AGNE_README.md)** - Standard AGNE CSV transformation (default)
+- **[Pine State Spirits](backend/src/utils/transformers/PINE_STATE_SPIRITS_README.md)** - Monthly specials transformation
+
+## 🏢 Supported Vendors
+
+### AGNE (Default)
+Standard AGNE CSV transformation with special pricing logic for sale and TPR items.
+- UPC: Remove one leading zero
+- Dates: Normalized to YYYYMMDD
+- Special pricing with quantity support
+- [View AGNE Documentation →](backend/src/utils/transformers/AGNE_README.md)
+
+### Pine State Spirits – Monthly Specials
+Transformation for Pine State Spirits monthly specials data.
+- UPC: Pad to 13 digits with leading zeros
+- Dates: Convert to MM/DD/YYYY format
+- Prices: Format to 2 decimal places
+- Special Pricing Method: Always "0"
+- [View Pine State Spirits Documentation →](backend/src/utils/transformers/PINE_STATE_SPIRITS_README.md)
+
+## 📋 Transformation Rules (AGNE - Default Vendor)
+
 
 ### Columns Removed
 - Status, CaseUPC, MANUFACTURER
