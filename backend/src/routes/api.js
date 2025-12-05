@@ -195,17 +195,15 @@ router.post('/transform', async (req, res) => {
         }
 
         // Create transform record
-        // Determine output format based on input
-        let finalOutputFormat = 'csv';
-        if (uploadRecord.fileType === 'excel') {
-            const ext = path.extname(uploadRecord.filename).toLowerCase();
-            if (ext === '.xls') finalOutputFormat = 'xls';
-            else finalOutputFormat = 'xlsx';
-        }
+        // Always output CSV format regardless of input file type
+        const finalOutputFormat = 'csv';
+
+        // Generate timestamp for filename: export_<timestamp>.csv
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
         const transformId = uuidv4();
         const outputDir = process.env.UPLOAD_DIR || './uploads';
-        const outputPath = path.join(outputDir, `${transformId}-output.${finalOutputFormat}`);
+        const outputPath = path.join(outputDir, `export_${timestamp}_${transformId}.csv`);
 
         const transformRecord = new Transform({
             transformId,
@@ -313,15 +311,15 @@ router.get('/download/:transformId', async (req, res) => {
             return res.status(404).json({ error: 'Output file not found' });
         }
 
-        const uploadRecord = await Upload.findOne({ uploadId: transformRecord.uploadId });
-        const outputExt = path.extname(transformRecord.outputPath);
-        let filename = `transformed-output${outputExt}`;
+        // Always output CSV format with timestamp-based filename
+        // Extract timestamp from output path if available, otherwise generate new one
+        const outputBasename = path.basename(transformRecord.outputPath);
+        const timestampMatch = outputBasename.match(/export_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/);
+        const timestamp = timestampMatch
+            ? timestampMatch[1]
+            : new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
-        if (uploadRecord && uploadRecord.filename) {
-            const originalName = uploadRecord.filename;
-            // Replace extension with correct output extension
-            filename = `transformed-${originalName.replace(/\.[^/.]+$/, "")}${outputExt}`;
-        }
+        const filename = `export_${timestamp}.csv`;
 
         res.download(transformRecord.outputPath, filename);
     } catch (error) {

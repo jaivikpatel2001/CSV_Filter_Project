@@ -10,6 +10,41 @@ import XLSX from 'xlsx';
 import { Readable } from 'stream';
 
 /**
+ * Escape a value for proper CSV formatting
+ * Handles special characters, quotes, commas, line breaks, and date formats
+ * @param {*} value - Value to escape
+ * @returns {string} - Properly escaped CSV value
+ */
+function escapeCSVValue(value) {
+    // Handle null/undefined
+    if (value === null || value === undefined) {
+        return '';
+    }
+
+    // Convert to string
+    let str = String(value);
+
+    // Trim whitespace
+    str = str.trim();
+
+    // Check if value needs quoting (contains comma, quote, newline, or carriage return)
+    const needsQuoting = str.includes(',') ||
+        str.includes('"') ||
+        str.includes('\n') ||
+        str.includes('\r') ||
+        str.includes('\t');
+
+    if (needsQuoting) {
+        // Escape existing quotes by doubling them
+        str = str.replace(/"/g, '""');
+        // Wrap in quotes
+        return `"${str}"`;
+    }
+
+    return str;
+}
+
+/**
  * Parse Excel file and return rows
  * @param {string} filePath - Path to Excel file
  * @param {number} limit - Max rows to read (0 = all)
@@ -80,29 +115,44 @@ export async function streamProcessCSV(inputPath, outputPath, transformFn, progr
         const warnings = [];
         let processed = 0;
         let isFirstRow = true;
+        let headers = [];
 
-        const writeStream = fs.createWriteStream(outputPath);
+        // Use UTF-8 encoding with BOM for Excel compatibility
+        const writeStream = fs.createWriteStream(outputPath, { encoding: 'utf8' });
+        writeStream.write('\ufeff'); // Write BOM
+
         const csvStream = parse({ headers: true });
 
         csvStream
             .on('data', (row) => {
+                // Skip empty rows
+                const hasContent = Object.values(row).some(v => {
+                    const str = String(v || '').trim();
+                    return str !== '';
+                });
+
+                if (!hasContent) {
+                    return;
+                }
+
                 const result = transformFn(row);
 
-                // Write header on first row
+                // Skip if transformation resulted in empty data
+                if (!result.transformedRow || Object.keys(result.transformedRow).length === 0) {
+                    return;
+                }
+
+                // Write header on first valid row - preserve column ordering
                 if (isFirstRow) {
-                    const headers = Object.keys(result.transformedRow);
-                    writeStream.write(headers.join(',') + '\n');
+                    headers = Object.keys(result.transformedRow);
+                    writeStream.write(headers.map(h => escapeCSVValue(h)).join(',') + '\n');
                     isFirstRow = false;
                 }
 
-                // Write data row
-                const values = Object.values(result.transformedRow).map(v => {
-                    // Escape commas and quotes
-                    const str = String(v || '');
-                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                        return `"${str.replace(/"/g, '""')}"`;
-                    }
-                    return str;
+                // Write data row with consistent column order
+                const values = headers.map(header => {
+                    const value = result.transformedRow[header];
+                    return escapeCSVValue(value);
                 });
                 writeStream.write(values.join(',') + '\n');
 
@@ -147,15 +197,27 @@ export async function streamProcessExcel(inputPath, outputPath, transformFn, pro
 
             const rows = XLSX.utils.sheet_to_json(worksheet, {
                 defval: '',
-                raw: false
+                raw: false // Keep as strings to preserve formatting
+            });
+
+            // Filter out empty rows (rows where all values are empty)
+            const nonEmptyRows = rows.filter(row => {
+                return Object.values(row).some(value => {
+                    const strValue = String(value || '').trim();
+                    return strValue !== '';
+                });
             });
 
             const transformedRows = [];
             const warnings = [];
 
-            rows.forEach((row, index) => {
+            nonEmptyRows.forEach((row, index) => {
                 const result = transformFn(row);
-                transformedRows.push(result.transformedRow);
+
+                // Skip rows where transformation resulted in empty data
+                if (result.transformedRow && Object.keys(result.transformedRow).length > 0) {
+                    transformedRows.push(result.transformedRow);
+                }
 
                 if (result.warnings && result.warnings.length > 0) {
                     warnings.push(...result.warnings.map(w => `Row ${index + 1}: ${w}`));
@@ -166,34 +228,22 @@ export async function streamProcessExcel(inputPath, outputPath, transformFn, pro
                 }
             });
 
-            // Check if output should be Excel
-            const outputExt = outputPath.split('.').pop().toLowerCase();
-            if (outputExt === 'xlsx' || outputExt === 'xls') {
-                const worksheet = XLSX.utils.json_to_sheet(transformedRows);
-                const newWorkbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(newWorkbook, worksheet, "Sheet1");
-                XLSX.writeFile(newWorkbook, outputPath);
+            // Always write to CSV format with proper encoding and formatting
+            const writeStream = fs.createWriteStream(outputPath, { encoding: 'utf8' });
 
-                resolve({ processed: rows.length, warnings });
-                return;
-            }
-
-            // Write to CSV
-            const writeStream = fs.createWriteStream(outputPath);
+            // Write BOM for proper UTF-8 encoding in Excel
+            writeStream.write('\ufeff');
 
             if (transformedRows.length > 0) {
-                // Write header
+                // Write header - preserve column ordering from first row
                 const headers = Object.keys(transformedRows[0]);
-                writeStream.write(headers.join(',') + '\n');
+                writeStream.write(headers.map(h => escapeCSVValue(h)).join(',') + '\n');
 
-                // Write rows
+                // Write rows with proper CSV escaping
                 transformedRows.forEach(row => {
-                    const values = Object.values(row).map(v => {
-                        const str = String(v || '');
-                        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                            return `"${str.replace(/"/g, '""')}"`;
-                        }
-                        return str;
+                    const values = headers.map(header => {
+                        const value = row[header];
+                        return escapeCSVValue(value);
                     });
                     writeStream.write(values.join(',') + '\n');
                 });
@@ -201,7 +251,7 @@ export async function streamProcessExcel(inputPath, outputPath, transformFn, pro
 
             writeStream.end();
 
-            resolve({ processed: rows.length, warnings });
+            resolve({ processed: nonEmptyRows.length, warnings });
         } catch (error) {
             reject(error);
         }
@@ -236,7 +286,8 @@ export async function parseFile(filePath, limit = 0) {
     } else if (fileType === 'excel') {
         return parseExcelFile(filePath, limit);
     } else {
-        throw new Error('Unsupported file type');
+        const ext = filePath.toLowerCase().split('.').pop();
+        throw new Error(`Unsupported file type: .${ext}. Supported formats are: CSV, XLS, XLSX`);
     }
 }
 
@@ -256,6 +307,7 @@ export async function streamProcessFile(inputPath, outputPath, transformFn, prog
     } else if (fileType === 'excel') {
         return streamProcessExcel(inputPath, outputPath, transformFn, progressCallback);
     } else {
-        throw new Error('Unsupported file type');
+        const ext = inputPath.toLowerCase().split('.').pop();
+        throw new Error(`Unsupported file type: .${ext}. Supported formats are: CSV, XLS, XLSX`);
     }
 }
