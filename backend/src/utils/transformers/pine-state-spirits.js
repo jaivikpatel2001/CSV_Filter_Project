@@ -184,6 +184,9 @@ export function transformRow(row, depositMapping = {}, options = {}) {
     // Helper to get value case-insensitively
     const getValue = (name) => getColumnValue(row, name);
 
+    // 0. Vendor ID - Add hardcoded value ('9')
+    transformedRow['Vendor ID'] = '9';
+
     // 1. Item # - Keep as is
     // 1. Item # - Preserve leading zeros if present; if numeric, pad to 6 digits
     (function setItemNumber() {
@@ -197,7 +200,7 @@ export function transformRow(row, depositMapping = {}, options = {}) {
 
         // If missing, set empty
         if (rawItem === null || rawItem === undefined || String(rawItem).trim() === '') {
-            transformedRow['Item #'] = '';
+            transformedRow['Product Code'] = '';
             return;
         }
 
@@ -205,10 +208,10 @@ export function transformRow(row, depositMapping = {}, options = {}) {
 
         // If it is pure digits, pad to 6 digits (preserve existing leading zeros)
         if (/^\d+$/.test(itemStr)) {
-            transformedRow['Item #'] = itemStr.padStart(6, '0');
+            transformedRow['Product Code'] = itemStr.padStart(6, '0');
         } else {
             // Non-numeric item codes: preserve exactly as-is (trimmed)
-            transformedRow['Item #'] = itemStr;
+            transformedRow['Product Code'] = itemStr;
         }
     })();
 
@@ -218,8 +221,8 @@ export function transformRow(row, depositMapping = {}, options = {}) {
     // 3. Size - Keep as is
     transformedRow['Size'] = getValue('Size') || '';
 
-    // 4. Unit - Keep as is
-    transformedRow['Unit'] = getValue('Unit') || getValue('UOM') || '';
+    // 4. Unit - REMOVED (Ignored per requirements)
+    // transformedRow['Unit'] = getValue('Unit') || getValue('UOM') || '';
 
     // 5. UPC - Ensure 13 digits with leading zero padding (map multiple column names)
     (function setUPC() {
@@ -239,11 +242,11 @@ export function transformRow(row, depositMapping = {}, options = {}) {
 
         if (!upcRaw || String(upcRaw).trim() === '') {
             // optional: warn only if you want to log missing UPCs
-            // warnings.push(`Missing UPC for item: ${transformedRow['Item #']}`);
+            // warnings.push(`Missing UPC for item: ${transformedRow['Product Code']}`);
         } else {
             // If padUPC returned empty string, push a warning
             if (!transformedRow['UPC']) {
-                warnings.push(`Could not normalize UPC for item: ${transformedRow['Item #']} (original: "${upcRaw}")`);
+                warnings.push(`Could not normalize UPC for item: ${transformedRow['Product Code']} (original: "${upcRaw}")`);
             }
         }
     })();
@@ -253,46 +256,46 @@ export function transformRow(row, depositMapping = {}, options = {}) {
     // 7. Effective Start - Convert to DD-MM-YYYY
     const effectiveStart = getValue('Effective Start') || getValue('EffectiveStart') || getValue('Start Date');
     const startResult = formatDateDDMMYYYY(effectiveStart);
-    transformedRow['Effective Start'] = startResult.value;
+    transformedRow['Start Date'] = startResult.value;
     if (startResult.warning) warnings.push(startResult.warning);
 
     // 8. Effective End - Convert to DD-MM-YYYY
     const effectiveEnd = getValue('Effective End') || getValue('EffectiveEnd') || getValue('End Date');
     const endResult = formatDateDDMMYYYY(effectiveEnd);
-    transformedRow['Effective End'] = endResult.value;
+    transformedRow['End Date'] = endResult.value;
     if (endResult.warning) warnings.push(endResult.warning);
 
     // 9. Retail - Convert to numeric with 2 decimal places
     const retail = getValue('Retail') || getValue('Retail Price');
-    transformedRow['Retail'] = formatPrice(retail);
-    if (!transformedRow['Retail'] && retail) {
-        warnings.push(`Invalid retail price for item: ${transformedRow['Item #']}`);
+    transformedRow['Price'] = formatPrice(retail);
+    if (!transformedRow['Price'] && retail) {
+        warnings.push(`Invalid retail price for item: ${transformedRow['Product Code']}`);
     }
 
     // 10. Special Pricing Method - Always "0"
-    transformedRow['Special Pricing Method'] = '0';
+    transformedRow['Special Price Method'] = '0';
 
     // 11. Sale Price - Convert to numeric with 2 decimal places
     const salePrice = getValue('Sale Price') || getValue('SalePrice') || getValue('Special Price');
-    transformedRow['Sale Price'] = formatPrice(salePrice);
-    if (!transformedRow['Sale Price'] && salePrice) {
-        warnings.push(`Invalid sale price for item: ${transformedRow['Item #']}`);
+    transformedRow['Special Price'] = formatPrice(salePrice);
+    if (!transformedRow['Special Price'] && salePrice) {
+        warnings.push(`Invalid sale price for item: ${transformedRow['Product Code']}`);
     }
 
     // 12. Retail Savings - Remove (skip)
 
     // 13. Agency Cost - Convert to numeric with 2 decimal places
     const agencyCost = getValue('Agency Cost') || getValue('AgencyCost') || getValue('Cost');
-    transformedRow['Agency Cost'] = formatPrice(agencyCost);
-    if (!transformedRow['Agency Cost'] && agencyCost) {
-        warnings.push(`Invalid agency cost for item: ${transformedRow['Item #']}`);
+    transformedRow['Cost'] = formatPrice(agencyCost);
+    if (!transformedRow['Cost'] && agencyCost) {
+        warnings.push(`Invalid agency cost for item: ${transformedRow['Product Code']}`);
     }
 
     // 14. Agency Sale Cost - Convert to numeric with 2 decimal places
     const agencySaleCost = getValue('Agency Sale Cost') || getValue('AgencySaleCost') || getValue('Sale Cost');
-    transformedRow['Agency Sale Cost'] = formatPrice(agencySaleCost);
-    if (!transformedRow['Agency Sale Cost'] && agencySaleCost) {
-        warnings.push(`Invalid agency sale cost for item: ${transformedRow['Item #']}`);
+    transformedRow['Special Cost'] = formatPrice(agencySaleCost);
+    if (!transformedRow['Special Cost'] && agencySaleCost) {
+        warnings.push(`Invalid agency sale cost for item: ${transformedRow['Product Code']}`);
     }
 
     // 15. Agency Savings - Remove (skip)
@@ -306,17 +309,18 @@ export function transformRow(row, depositMapping = {}, options = {}) {
  */
 export function getOutputColumns() {
     return [
-        'Item #',
+        'Vendor ID',
+        'Product Code',
         'Description',
         'Size',
-        'Unit',
+        // 'Unit', Removed
         'UPC',
-        'Effective Start',
-        'Effective End',
-        'Retail',
-        'Special Pricing Method',
-        'Sale Price',
-        'Agency Cost',
-        'Agency Sale Cost'
+        'Start Date',
+        'End Date',
+        'Price',
+        'Special Price Method',
+        'Special Price',
+        'Cost',
+        'Special Cost'
     ];
 }

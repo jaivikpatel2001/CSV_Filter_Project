@@ -10,8 +10,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { Upload, Transform, DepositMap } from '../models/models.js';
 import { parseFile, streamProcessFile, getFileType } from '../utils/fileProcessor.js';
 import { transformRow, getOutputColumns, getAvailableVendors, getDefaultVendor } from '../utils/transformer.js';
+import mongoose from 'mongoose';
+import { memoryStore } from '../utils/memoryStore.js';
 
 const router = express.Router();
+
+// Helper to check DB connection
+const isDbConnected = () => mongoose.connection.readyState === 1;
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -93,7 +98,12 @@ router.post('/upload-file', upload.single('file'), async (req, res) => {
             status: 'previewed'
         });
 
-        await uploadRecord.save();
+        if (isDbConnected()) {
+            await uploadRecord.save();
+        } else {
+            console.warn('MongoDB not connected, saving to memory store');
+            await memoryStore.save('Upload', uploadRecord);
+        }
 
         res.json({
             uploadId,
@@ -119,7 +129,12 @@ router.get('/preview/:uploadId', async (req, res) => {
     try {
         const { uploadId } = req.params;
 
-        const uploadRecord = await Upload.findOne({ uploadId });
+        let uploadRecord;
+        if (isDbConnected()) {
+            uploadRecord = await Upload.findOne({ uploadId });
+        } else {
+            uploadRecord = memoryStore.findOne('Upload', { uploadId });
+        }
 
         if (!uploadRecord) {
             return res.status(404).json({ error: 'Upload not found' });
@@ -155,7 +170,12 @@ router.post('/transform', async (req, res) => {
             return res.status(400).json({ error: 'uploadId is required' });
         }
 
-        const uploadRecord = await Upload.findOne({ uploadId });
+        let uploadRecord;
+        if (isDbConnected()) {
+            uploadRecord = await Upload.findOne({ uploadId });
+        } else {
+            uploadRecord = memoryStore.findOne('Upload', { uploadId });
+        }
 
         if (!uploadRecord) {
             return res.status(404).json({ error: 'Upload not found' });
@@ -214,7 +234,11 @@ router.post('/transform', async (req, res) => {
             status: 'processing'
         });
 
-        await transformRecord.save();
+        if (isDbConnected()) {
+            await transformRecord.save();
+        } else {
+            await memoryStore.save('Transform', transformRecord);
+        }
 
         // Start transformation (async)
         setImmediate(async () => {
@@ -233,15 +257,24 @@ router.post('/transform', async (req, res) => {
                 transformRecord.rowsProcessed = result.processed;
                 transformRecord.warnings = result.warnings;
                 transformRecord.completedAt = new Date();
-                await transformRecord.save();
-
-                uploadRecord.status = 'transformed';
-                await uploadRecord.save();
+                if (isDbConnected()) {
+                    await transformRecord.save();
+                    await uploadRecord.save();
+                } else {
+                    // Update objects in memory store
+                    await memoryStore.save('Transform', transformRecord);
+                    await memoryStore.save('Upload', uploadRecord);
+                }
             } catch (error) {
                 console.error('Transform error:', error);
                 transformRecord.status = 'failed';
                 transformRecord.error = error.message;
-                await transformRecord.save();
+
+                if (isDbConnected()) {
+                    await transformRecord.save();
+                } else {
+                    await memoryStore.save('Transform', transformRecord);
+                }
             }
         });
 
@@ -265,7 +298,12 @@ router.get('/transform-status/:transformId', async (req, res) => {
     try {
         const { transformId } = req.params;
 
-        const transformRecord = await Transform.findOne({ transformId });
+        let transformRecord;
+        if (isDbConnected()) {
+            transformRecord = await Transform.findOne({ transformId });
+        } else {
+            transformRecord = memoryStore.findOne('Transform', { transformId });
+        }
 
         if (!transformRecord) {
             return res.status(404).json({ error: 'Transform not found' });
@@ -294,7 +332,12 @@ router.get('/download/:transformId', async (req, res) => {
     try {
         const { transformId } = req.params;
 
-        const transformRecord = await Transform.findOne({ transformId });
+        let transformRecord;
+        if (isDbConnected()) {
+            transformRecord = await Transform.findOne({ transformId });
+        } else {
+            transformRecord = memoryStore.findOne('Transform', { transformId });
+        }
 
         if (!transformRecord) {
             return res.status(404).json({ error: 'Transform not found' });
@@ -383,7 +426,11 @@ router.post('/upload-deposit-map', upload.single('file'), async (req, res) => {
             totalMappings: mappings.size
         });
 
-        await depositMapRecord.save();
+        if (isDbConnected()) {
+            await depositMapRecord.save();
+        } else {
+            await memoryStore.save('DepositMap', depositMapRecord);
+        }
 
         res.json({
             depositMapId,
@@ -403,9 +450,14 @@ router.post('/upload-deposit-map', upload.single('file'), async (req, res) => {
  */
 router.get('/deposit-maps', async (req, res) => {
     try {
-        const depositMaps = await DepositMap.find()
-            .select('depositMapId filename totalMappings createdAt')
-            .sort({ createdAt: -1 });
+        let depositMaps;
+        if (isDbConnected()) {
+            depositMaps = await DepositMap.find()
+                .select('depositMapId filename totalMappings createdAt')
+                .sort({ createdAt: -1 });
+        } else {
+            depositMaps = memoryStore.find('DepositMap');
+        }
 
         res.json(depositMaps);
     } catch (error) {
@@ -420,13 +472,23 @@ router.get('/deposit-maps', async (req, res) => {
  */
 router.get('/history', async (req, res) => {
     try {
-        const transforms = await Transform.find()
-            .sort({ createdAt: -1 })
-            .limit(50);
+        let transforms;
+        if (isDbConnected()) {
+            transforms = await Transform.find()
+                .sort({ createdAt: -1 })
+                .limit(50);
+        } else {
+            transforms = memoryStore.find('Transform').slice(0, 50);
+        }
 
         const history = await Promise.all(
             transforms.map(async (transform) => {
-                const upload = await Upload.findOne({ uploadId: transform.uploadId });
+                let upload;
+                if (isDbConnected()) {
+                    upload = await Upload.findOne({ uploadId: transform.uploadId });
+                } else {
+                    upload = memoryStore.findOne('Upload', { uploadId: transform.uploadId });
+                }
                 return {
                     transformId: transform.transformId,
                     uploadId: transform.uploadId,
@@ -455,7 +517,12 @@ router.delete('/transform/:transformId', async (req, res) => {
     try {
         const { transformId } = req.params;
 
-        const transformRecord = await Transform.findOne({ transformId });
+        let transformRecord;
+        if (isDbConnected()) {
+            transformRecord = await Transform.findOne({ transformId });
+        } else {
+            transformRecord = memoryStore.findOne('Transform', { transformId });
+        }
 
         if (!transformRecord) {
             return res.status(404).json({ error: 'Transform not found' });
@@ -466,7 +533,11 @@ router.delete('/transform/:transformId', async (req, res) => {
             fs.unlinkSync(transformRecord.outputPath);
         }
 
-        await Transform.deleteOne({ transformId });
+        if (isDbConnected()) {
+            await Transform.deleteOne({ transformId });
+        } else {
+            memoryStore.deleteOne('Transform', { transformId });
+        }
 
         res.json({ message: 'Transform deleted successfully' });
     } catch (error) {
