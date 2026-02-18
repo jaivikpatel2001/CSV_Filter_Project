@@ -55,7 +55,8 @@ export function transformRow(row, depositMapping = {}, options = {}) {
     // 1. Status - Remove (skip)
 
     // 2. Item - Keep
-    transformedRow.Item = getValue('Item') || '';
+    transformedRow['Vendor ID'] = '3';
+    transformedRow['Product Code'] = getValue('Item') || '';
 
     // 3. UPC - Remove one leading zero
     const upc = getValue('UPC');
@@ -69,64 +70,64 @@ export function transformRow(row, depositMapping = {}, options = {}) {
     // 6. Department - Keep (with preservation logic)
     const deptResult = preserveDepartmentID(
         getValue('Department'),
-        options.originalData?.[transformedRow.Item]?.Department
+        options.originalData?.[transformedRow['Product Code']]?.Department
     );
-    transformedRow.Department = deptResult.value;
+    transformedRow['Department ID'] = deptResult.value;
     if (deptResult.warning) warnings.push(deptResult.warning);
 
     // 7. MANUFACTURER - Remove (skip)
     // 8. REG_MULTIPLE - Remove (skip)
 
     // 9. REG_RETAIL - Keep
-    transformedRow.REG_RETAIL = getValue('REG_RETAIL') || '';
+    transformedRow.Price = getValue('REG_RETAIL') || '';
 
     // 10. CASE_RETAIL - Remove (skip)
 
     // 11. PACK - Keep
-    transformedRow.PACK = getValue('PACK') || '';
+    transformedRow.Pack = getValue('PACK') || '';
 
     // 12. REGULARCOST - Keep
-    transformedRow.REGULARCOST = getValue('REGULARCOST') || '';
+    transformedRow.Cost = getValue('REGULARCOST') || '';
 
     // 13. TAX1 - Transform
     const tax1Result = transformTAX1(getValue('TAX1'));
-    transformedRow.TAX1 = tax1Result.value;
+    transformedRow['Tax ID'] = tax1Result.value;
     if (tax1Result.warning) warnings.push(tax1Result.warning);
 
     // 14. TAX2 - Remove (skip)
     // 15. TAX3 - Remove (skip)
 
     // 16. FOOD_STAMP - Keep
-    transformedRow.FOOD_STAMP = getValue('FOOD_STAMP') || '';
+    transformedRow['Foodstamp Eligible'] = getValue('FOOD_STAMP') || '';
 
     // 17. WIC - Keep
-    transformedRow.WIC = getValue('WIC') || '';
+    transformedRow['WIC Eligible'] = getValue('WIC') || '';
 
     // 18. BOTTLE_DEPOSIT - Map from deposit mapping
     const existingDeposit = getValue('BOTTLE_DEPOSIT');
 
     if (existingDeposit && depositMapping) {
         if (depositMapping[existingDeposit]) {
-            transformedRow.BOTTLE_DEPOSIT = depositMapping[existingDeposit];
+            transformedRow['Fee ID'] = depositMapping[existingDeposit];
         } else {
             const normalizedDeposit = parseNumeric(existingDeposit);
             if (normalizedDeposit !== null && depositMapping[normalizedDeposit.toString()]) {
-                transformedRow.BOTTLE_DEPOSIT = depositMapping[normalizedDeposit.toString()];
+                transformedRow['Fee ID'] = depositMapping[normalizedDeposit.toString()];
             } else {
-                const itemKey = transformedRow.UPC || transformedRow.Item;
+                const itemKey = transformedRow.UPC || transformedRow['Product Code'];
                 if (depositMapping[itemKey]) {
-                    transformedRow.BOTTLE_DEPOSIT = depositMapping[itemKey];
+                    transformedRow['Fee ID'] = depositMapping[itemKey];
                 } else {
-                    transformedRow.BOTTLE_DEPOSIT = existingDeposit;
+                    transformedRow['Fee ID'] = existingDeposit;
                 }
             }
         }
     } else {
-        const itemKey = transformedRow.UPC || transformedRow.Item;
+        const itemKey = transformedRow.UPC || transformedRow['Product Code'];
         if (depositMapping && depositMapping[itemKey]) {
-            transformedRow.BOTTLE_DEPOSIT = depositMapping[itemKey];
+            transformedRow['Fee ID'] = depositMapping[itemKey];
         } else {
-            transformedRow.BOTTLE_DEPOSIT = '';
+            transformedRow['Fee ID'] = '';
             if (itemKey) {
                 warnings.push(`No deposit mapping found for UPC/Item: ${itemKey}`);
             }
@@ -141,7 +142,7 @@ export function transformRow(row, depositMapping = {}, options = {}) {
     const saleRetail = getValue('SALE_RETAIL');
     const regRetail = getValue('REG_RETAIL');
 
-    transformedRow.group_price = '';
+    transformedRow['Special Group Price'] = '';
 
     const hasSaleData = saleRetail || getValue('SALE_COST') ||
         getValue('SALE_START_DATE') || getValue('SALE_END_DATE') ||
@@ -149,39 +150,39 @@ export function transformRow(row, depositMapping = {}, options = {}) {
 
     if (hasSaleData) {
         if (saleMultiple !== null && saleMultiple > 1) {
-            transformedRow.group_price = saleRetail || '';
-            transformedRow.SALE_RETAIL = regRetail || '';
-            transformedRow['SPECIAL PRICING #1'] = '2';
-            transformedRow['SPECIAL QUANTITY 1'] = getValue('SALE_MULTIPLE') || '';
+            transformedRow['Special Group Price'] = saleRetail || '';
+            transformedRow['Special Price'] = regRetail || '';
+            transformedRow['Special Price Method'] = '2';
+            transformedRow['Special Quantity'] = getValue('SALE_MULTIPLE') || '';
         } else {
-            transformedRow.SALE_RETAIL = saleRetail || '';
-            transformedRow['SPECIAL PRICING #1'] = '0';
-            transformedRow['SPECIAL QUANTITY 1'] = '';
+            transformedRow['Special Price'] = saleRetail || '';
+            transformedRow['Special Price Method'] = '0';
+            transformedRow['Special Quantity'] = '';
         }
     } else {
-        transformedRow.SALE_RETAIL = '';
-        transformedRow['SPECIAL PRICING #1'] = '';
-        transformedRow['SPECIAL QUANTITY 1'] = '';
+        transformedRow['Special Price'] = '';
+        transformedRow['Special Price Method'] = '';
+        transformedRow['Special Quantity'] = '';
     }
 
     // 22. SALE_COST - Keep
-    transformedRow.SALE_COST = getValue('SALE_COST') || '';
+    transformedRow['Special Cost'] = getValue('SALE_COST') || '';
 
     // 23. SALE_START_DATE - Keep and normalize
     const saleStartResult = normalizeDate(getValue('SALE_START_DATE'));
-    transformedRow.SALE_START_DATE = saleStartResult.value;
+    transformedRow['Start Date'] = saleStartResult.value;
     if (saleStartResult.warning) warnings.push(saleStartResult.warning);
 
     // 24. SALE_END_DATE - Keep and normalize
     const saleEndResult = normalizeDate(getValue('SALE_END_DATE'));
-    transformedRow.SALE_END_DATE = saleEndResult.value;
+    transformedRow['End Date'] = saleEndResult.value;
     if (saleEndResult.warning) warnings.push(saleEndResult.warning);
 
     // 25. TPR_MULTIPLE and SPECIAL QUANTITY - Special logic
     const tprMultiple = parseNumeric(getValue('TPR_MULTIPLE') || getValue('TRP_MULTIPLE'));
     const tprRetail = getValue('TPR_RETAIL') || getValue('TRP_RETAIL');
 
-    transformedRow.group_price_2 = '';
+    transformedRow['Special Group Price #2'] = '';
 
     const hasTprData = tprRetail || getValue('TPR_COST') || getValue('TRP_COST') ||
         getValue('TPR_START_DATE') || getValue('TRP_START_DATE') ||
@@ -190,42 +191,41 @@ export function transformRow(row, depositMapping = {}, options = {}) {
 
     if (hasTprData) {
         if (tprMultiple !== null && tprMultiple > 1) {
-            transformedRow.group_price_2 = tprRetail || '';
-            transformedRow.TPR_RETAIL = regRetail || '';
-            transformedRow['SPECIAL PRICING #2'] = '2';
-            transformedRow['SPECIAL QUANTITY 2'] = getValue('TPR_MULTIPLE') || getValue('TRP_MULTIPLE') || '';
+            transformedRow['Special Group Price #2'] = tprRetail || '';
+            transformedRow['Special Price #2'] = regRetail || '';
+            transformedRow['Special Price Method #2'] = '2';
+            transformedRow['Special Quantity #2'] = getValue('TPR_MULTIPLE') || getValue('TRP_MULTIPLE') || '';
         } else {
-            transformedRow.TPR_RETAIL = tprRetail || '';
-            transformedRow['SPECIAL PRICING #2'] = '0';
-            transformedRow['SPECIAL QUANTITY 2'] = '';
+            transformedRow['Special Price #2'] = tprRetail || '';
+            transformedRow['Special Price Method #2'] = '0';
+            transformedRow['Special Quantity #2'] = '';
         }
     } else {
-        transformedRow.TPR_RETAIL = '';
-        transformedRow['SPECIAL PRICING #2'] = '';
-        transformedRow['SPECIAL QUANTITY 2'] = '';
+        transformedRow['Special Price #2'] = '';
+        transformedRow['Special Price Method #2'] = '';
+        transformedRow['Special Quantity #2'] = '';
     }
 
     // 26. TPR_COST - Keep
-    transformedRow.TPR_COST = getValue('TPR_COST') || getValue('TRP_COST') || '';
+    transformedRow['Special Cost #2'] = getValue('TPR_COST') || getValue('TRP_COST') || '';
 
     // 27. TPR_START_DATE - Keep and normalize
     const tprStartResult = normalizeDate(getValue('TPR_START_DATE') || getValue('TRP_START_DATE'));
-    transformedRow.TPR_START_DATE = tprStartResult.value;
+    transformedRow['Start Date #2'] = tprStartResult.value;
     if (tprStartResult.warning) warnings.push(tprStartResult.warning);
 
     // 28. TPR_END_DATE - Keep and normalize
     const tprEndResult = normalizeDate(getValue('TPR_END_DATE') || getValue('TRP_END_DATE'));
-    transformedRow.TPR_END_DATE = tprEndResult.value;
+    transformedRow['End Date #2'] = tprEndResult.value;
     if (tprEndResult.warning) warnings.push(tprEndResult.warning);
 
     // 29-32. FUTURE_* - Remove (skip)
     // 33. BRAND - Remove (skip)
 
     // 34. ITEM_SIZE - Keep
-    transformedRow.ITEM_SIZE = getValue('ITEM_SIZE') || '';
+    transformedRow.Size = getValue('ITEM_SIZE') || '';
 
-    // 35. ITEM_UOM - Keep
-    transformedRow.ITEM_UOM = getValue('ITEM_UOM') || '';
+    // 35. ITEM_UOM - IGNORE COLUMN
 
     // 36. PBHN - Remove (skip)
     // 37. CLASS - Remove (skip)
@@ -240,38 +240,39 @@ export function transformRow(row, depositMapping = {}, options = {}) {
 export function getOutputColumns() {
     return [
         // Core item information
-        'Item',
+        'Vendor ID',
+        'Product Code',
         'UPC',
         'Description',
-        'Department',
-        'REG_RETAIL',
-        'PACK',
-        'REGULARCOST',
-        'TAX1',
-        'FOOD_STAMP',
-        'WIC',
-        'BOTTLE_DEPOSIT',
+        'Department ID',
+        'Price',
+        'Pack',
+        'Cost',
+        'Tax ID',
+        'Foodstamp Eligible',
+        'WIC Eligible',
+        'Fee ID',
 
-        // SALE section: Special_Pricing, RETAIL, QUANTITY, Group_price, Start_Date, End_Date
-        'SPECIAL PRICING #1',
-        'SALE_RETAIL',
-        'SPECIAL QUANTITY 1',
-        'group_price',
-        'SALE_START_DATE',
-        'SALE_END_DATE',
-        'SALE_COST',
+        // SALE section
+        'Special Price Method',
+        'Special Price',
+        'Special Quantity',
+        'Special Group Price',
+        'Start Date',
+        'End Date',
+        'Special Cost',
 
-        // TPR section: Special_Pricing, RETAIL, QUANTITY, Group_price, Start_Date, End_Date
-        'SPECIAL PRICING #2',
-        'TPR_RETAIL',
-        'SPECIAL QUANTITY 2',
-        'group_price_2',
-        'TPR_START_DATE',
-        'TPR_END_DATE',
-        'TPR_COST',
+        // TPR section
+        'Special Price Method #2',
+        'Special Price #2',
+        'Special Quantity #2',
+        'Special Group Price #2',
+        'Start Date #2',
+        'End Date #2',
+        'Special Cost #2',
 
         // Item details
-        'ITEM_SIZE',
-        'ITEM_UOM'
+        'Size'
+        // 'ITEM_UOM' Removed
     ];
 }
